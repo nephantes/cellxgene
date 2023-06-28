@@ -1,21 +1,18 @@
-// jshint esversion: 6
 import React from "react";
 import { AnchorButton, Tooltip, Position } from "@blueprintjs/core";
 import { connect } from "react-redux";
 import * as globals from "../../globals";
 import Category from "./category";
 import { AnnotationsHelpers, ControlsHelpers } from "../../util/stateManager";
-import AnnoDialog from "./annoDialog";
+import AnnoDialog from "../annoDialog";
 import AnnoSelect from "./annoSelect";
-import LabelInput from "./labelInput";
+import LabelInput from "../labelInput";
 import { labelPrompt } from "./labelUtil";
 import actions from "../../actions";
 
 @connect((state) => ({
   writableCategoriesEnabled: state.config?.parameters?.annotations ?? false,
   schema: state.annoMatrix?.schema,
-  ontology: state.ontology,
-  userInfo: state.userInfo,
 }))
 class Categories extends React.Component {
   constructor(props) {
@@ -100,13 +97,8 @@ class Categories extends React.Component {
     this.setState({ newCategoryText: name });
   };
 
-  instruction = (name) => {
-    return labelPrompt(
-      this.categoryNameError(name),
-      "New, unique category name",
-      ":"
-    );
-  };
+  instruction = (name) =>
+    labelPrompt(this.categoryNameError(name), "New, unique category name", ":");
 
   onExpansionChange = (catName) => {
     const { expandedCats } = this.state;
@@ -128,17 +120,10 @@ class Categories extends React.Component {
       newCategoryText,
       expandedCats,
     } = this.state;
-    const {
-      writableCategoriesEnabled,
-      schema,
-      ontology,
-      userInfo,
-    } = this.props;
-    const ontologyEnabled = ontology?.enabled ?? false;
+    const { writableCategoriesEnabled, schema } = this.props;
     /* all names, sorted in display order.  Will be rendered in this order */
-    const allCategoryNames = ControlsHelpers.selectableCategoryNames(
-      schema
-    ).sort();
+    const allCategoryNames =
+      ControlsHelpers.selectableCategoryNames(schema).sort();
 
     return (
       <div
@@ -159,7 +144,7 @@ class Categories extends React.Component {
           handleCancel={this.handleDisableAnnoMode}
           annoInput={
             <LabelInput
-              labelSuggestions={ontologyEnabled ? ontology.terms : null}
+              labelSuggestions={null}
               onChange={this.handleChange}
               onSelect={this.handleSelect}
               inputProps={{
@@ -182,20 +167,43 @@ class Categories extends React.Component {
           }
         />
 
+        {writableCategoriesEnabled ? (
+          <div style={{ marginBottom: 10 }}>
+            <Tooltip
+              content="Create a new category"
+              position={Position.RIGHT}
+              boundary="viewport"
+              hoverOpenDelay={globals.tooltipHoverOpenDelay}
+              modifiers={{
+                preventOverflow: { enabled: false },
+                hide: { enabled: false },
+              }}
+            >
+              <AnchorButton
+                type="button"
+                data-testid="open-annotation-dialog"
+                onClick={this.handleEnableAnnoMode}
+                intent="primary"
+              >
+                Create new <strong>category</strong>
+              </AnchorButton>
+            </Tooltip>
+          </div>
+        ) : null}
+
         {/* READ ONLY CATEGORICAL FIELDS */}
         {/* this is duplicative but flat, could be abstracted */}
-        {allCategoryNames.map((catName) =>
-          !schema.annotations.obsByName[catName].writable &&
-          (schema.annotations.obsByName[catName].categories?.length > 1 ||
-            !schema.annotations.obsByName[catName].categories) ? (
-            <Category
-              key={catName}
-              metadataField={catName}
-              onExpansionChange={this.onExpansionChange}
-              isExpanded={expandedCats.has(catName)}
-              createAnnoModeActive={createAnnoModeActive}
-            />
-          ) : null
+        {allCategoryNames.map(
+          (catName) =>
+            !schema.annotations.obsByName[catName].writable && (
+              <Category
+                key={catName}
+                metadataField={catName}
+                onExpansionChange={this.onExpansionChange}
+                isExpanded={expandedCats.has(catName)}
+                createAnnoModeActive={createAnnoModeActive}
+              />
+            )
         )}
         {/* WRITEABLE FIELDS */}
         {allCategoryNames.map((catName) =>
@@ -209,33 +217,6 @@ class Categories extends React.Component {
             />
           ) : null
         )}
-
-        {writableCategoriesEnabled ? (
-          <Tooltip
-            content={
-              userInfo.is_authenticated
-                ? "Create a new category"
-                : "You must be logged in to create new categorical fields"
-            }
-            position={Position.RIGHT}
-            boundary="viewport"
-            hoverOpenDelay={globals.tooltipHoverOpenDelay}
-            modifiers={{
-              preventOverflow: { enabled: false },
-              hide: { enabled: false },
-            }}
-          >
-            <AnchorButton
-              type="button"
-              data-testid="open-annotation-dialog"
-              onClick={this.handleEnableAnnoMode}
-              intent="primary"
-              disabled={!userInfo.is_authenticated}
-            >
-              Create new category
-            </AnchorButton>
-          </Tooltip>
-        ) : null}
       </div>
     );
   }

@@ -1,4 +1,4 @@
-export { doBinaryRequest } from "../util/actionHelpers";
+export { doBinaryRequest, doFetch } from "../util/actionHelpers";
 
 /* double URI encode - needed for query-param filters */
 export function _dubEncURIComp(s) {
@@ -19,9 +19,7 @@ export function _fetchResult(promise) {
     }
   );
 
-  res.status = () => {
-    return _status;
-  };
+  res.status = () => _status;
 
   return res;
 }

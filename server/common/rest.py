@@ -3,11 +3,12 @@ import logging
 import sys
 from http import HTTPStatus
 import zlib
+import json
 
 from flask import make_response, jsonify, current_app, abort
 from werkzeug.urls import url_unquote
 
-from server.common.config.client_config import get_client_config, get_client_userinfo
+from server.common.config.client_config import get_client_config
 from server.common.constants import Axis, DiffExpMode, JSON_NaN_to_num_warning_msg
 from server.common.errors import (
     FilterError,
@@ -17,10 +18,12 @@ from server.common.errors import (
     ExceedsLimitError,
     DatasetAccessError,
     ColorFormatException,
+    AnnotationsError,
+    ObsoleteRequest,
+    UnsupportedSummaryMethod,
 )
-
-import json
-from server.data_common.fbs.matrix import decode_matrix_fbs
+from server.common.genesets import summarizeQueryHash
+from server.common.fbs.matrix import decode_matrix_fbs
 
 
 def abort_and_log(code, logmsg, loglevel=logging.DEBUG, include_exc_info=False):
@@ -44,7 +47,7 @@ def _query_parameter_to_filter(args):
 
     Query param filters look like:  <axis>:name=value, where value
     may be one of:
-        - a range, min,max, where either may be an open range by using an asterisc, eg, 10,*
+        - a range, min,max, where either may be an open range by using an asterisk, eg, 10,*
         - a value
     Eg,
         ...?tissue=lung&obs:tissue=heart&obs:num_reads=1000,*
@@ -106,7 +109,7 @@ def schema_get_helper(data_adaptor):
 
     # add label obs annotations as needed
     annotations = data_adaptor.dataset_config.user_annotations
-    if annotations is not None:
+    if annotations.user_annotations_enabled():
         label_schema = annotations.get_schema(data_adaptor)
         schema["annotations"]["obs"]["columns"].extend(label_schema)
 
@@ -123,11 +126,6 @@ def config_get(app_config, data_adaptor):
     return make_response(jsonify(config), HTTPStatus.OK)
 
 
-def userinfo_get(app_config, data_adaptor):
-    config = get_client_userinfo(app_config, data_adaptor)
-    return make_response(jsonify(config), HTTPStatus.OK)
-
-
 def annotations_obs_get(request, data_adaptor):
     fields = request.args.getlist("annotation-name", None)
     num_columns_requested = len(data_adaptor.get_obs_keys()) if len(fields) == 0 else len(fields)
@@ -140,7 +138,7 @@ def annotations_obs_get(request, data_adaptor):
     try:
         labels = None
         annotations = data_adaptor.dataset_config.user_annotations
-        if annotations:
+        if annotations.user_annotations_enabled():
             labels = annotations.read_labels(data_adaptor)
         fbs = data_adaptor.annotation_to_fbs_matrix(Axis.OBS, fields, labels)
         return make_response(fbs, HTTPStatus.OK, {"Content-Type": "application/octet-stream"})
@@ -151,7 +149,7 @@ def annotations_obs_get(request, data_adaptor):
 def annotations_put_fbs_helper(data_adaptor, fbs):
     """helper function to write annotations from fbs"""
     annotations = data_adaptor.dataset_config.user_annotations
-    if annotations is None:
+    if not annotations.user_annotations_enabled():
         raise DisabledFeatureError("Writable annotations are not enabled")
 
     new_label_df = decode_matrix_fbs(fbs)
@@ -166,7 +164,7 @@ def inflate(data):
 
 def annotations_obs_put(request, data_adaptor):
     annotations = data_adaptor.dataset_config.user_annotations
-    if annotations is None:
+    if not annotations.user_annotations_enabled():
         return abort(HTTPStatus.NOT_IMPLEMENTED)
 
     anno_collection = request.args.get("annotation-collection-name", default=None)
@@ -196,9 +194,6 @@ def annotations_var_get(request, data_adaptor):
 
     try:
         labels = None
-        annotations = data_adaptor.dataset_config.user_annotations
-        if annotations is not None:
-            labels = annotations.read_labels(data_adaptor)
         return make_response(
             data_adaptor.annotation_to_fbs_matrix(Axis.VAR, fields, labels),
             HTTPStatus.OK,
@@ -311,20 +306,94 @@ def layout_obs_get(request, data_adaptor):
         )
 
 
-def layout_obs_put(request, data_adaptor):
-    if not data_adaptor.dataset_config.embeddings__enable_reembedding:
-        return abort(HTTPStatus.NOT_IMPLEMENTED)
-
-    args = request.get_json()
-    filter = args["filter"] if args else None
-    if not filter:
-        return abort_and_log(HTTPStatus.BAD_REQUEST, "obs filter is required")
-    method = args["method"] if args else "umap"
+def genesets_get(request, data_adaptor):
+    preferred_mimetype = request.accept_mimetypes.best_match(["application/json", "text/csv"])
+    if preferred_mimetype not in ("application/json", "text/csv"):
+        return abort(HTTPStatus.NOT_ACCEPTABLE)
 
     try:
-        schema = data_adaptor.compute_embedding(method, filter)
-        return make_response(jsonify(schema), HTTPStatus.OK, {"Content-Type": "application/json"})
-    except NotImplementedError as e:
-        return abort_and_log(HTTPStatus.NOT_IMPLEMENTED, str(e))
-    except (ValueError, DisabledFeatureError, FilterError) as e:
+        annotations = data_adaptor.dataset_config.user_annotations
+        (genesets, tid) = annotations.read_gene_sets(data_adaptor)
+
+        if preferred_mimetype == "text/csv":
+            return make_response(
+                annotations.gene_sets_to_csv(genesets),
+                HTTPStatus.OK,
+                {
+                    "Content-Type": "text/csv",
+                    "Content-Disposition": "attachment; filename=genesets.csv",
+                },
+            )
+        else:
+            return make_response(
+                jsonify({"genesets": annotations.gene_sets_to_response(genesets), "tid": tid}), HTTPStatus.OK
+            )
+    except (ValueError, KeyError, AnnotationsError) as e:
+        return abort_and_log(HTTPStatus.BAD_REQUEST, str(e))
+
+
+def genesets_put(request, data_adaptor):
+    annotations = data_adaptor.dataset_config.user_annotations
+    if not annotations.gene_sets_save_enabled():
+        return abort(HTTPStatus.NOT_IMPLEMENTED)
+
+    anno_collection = request.args.get("annotation-collection-name", default=None)
+    if anno_collection is not None:
+        if not annotations.is_safe_collection_name(anno_collection):
+            return abort(HTTPStatus.BAD_REQUEST, "Bad annotation collection name")
+        annotations.set_collection(anno_collection)
+
+    args = request.get_json()
+    try:
+        genesets = args.get("genesets", None)
+        tid = args.get("tid", None)
+        if genesets is None:
+            abort(HTTPStatus.BAD_REQUEST)
+
+        annotations.write_gene_sets(genesets, tid, data_adaptor)
+        return make_response(jsonify({"status": "OK"}), HTTPStatus.OK)
+    except (ValueError, DisabledFeatureError, KeyError) as e:
         return abort_and_log(HTTPStatus.BAD_REQUEST, str(e), include_exc_info=True)
+    except (ObsoleteRequest, TypeError) as e:
+        return abort(HTTPStatus.NOT_FOUND, description=str(e))
+
+
+def summarize_var_helper(request, data_adaptor, key, raw_query):
+    preferred_mimetype = request.accept_mimetypes.best_match(["application/octet-stream"])
+    if preferred_mimetype != "application/octet-stream":
+        return abort(HTTPStatus.NOT_ACCEPTABLE)
+
+    summary_method = request.values.get("method", default="mean")
+    query_hash = summarizeQueryHash(raw_query)
+    if key and query_hash != key:
+        return abort(HTTPStatus.BAD_REQUEST, description="query key did not match")
+
+    args_filter_only = request.values.copy()
+    args_filter_only.poplist("method")
+    args_filter_only.poplist("key")
+
+    try:
+        filter = _query_parameter_to_filter(args_filter_only)
+        return make_response(
+            data_adaptor.summarize_var(summary_method, filter, query_hash),
+            HTTPStatus.OK,
+            {"Content-Type": "application/octet-stream"},
+        )
+    except (ValueError) as e:
+        return abort(HTTPStatus.NOT_FOUND, description=str(e))
+    except (UnsupportedSummaryMethod, FilterError) as e:
+        return abort(HTTPStatus.BAD_REQUEST, description=str(e))
+
+
+def summarize_var_get(request, data_adaptor):
+    return summarize_var_helper(request, data_adaptor, None, request.query_string)
+
+
+def summarize_var_post(request, data_adaptor):
+    if not request.content_type or "application/x-www-form-urlencoded" not in request.content_type:
+        return abort(HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+    if request.content_length > 1_000_000:  # just a sanity check to avoid memory exhaustion
+        return abort(HTTPStatus.BAD_REQUEST)
+
+    key = request.args.get("key", default=None)
+    return summarize_var_helper(request, data_adaptor, key, request.get_data())

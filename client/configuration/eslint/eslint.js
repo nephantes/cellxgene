@@ -1,24 +1,21 @@
 module.exports = {
   root: true,
-  parser: "babel-eslint",
+
   extends: [
     "airbnb",
     "plugin:eslint-comments/recommended",
     "plugin:@blueprintjs/recommended",
     "plugin:compat/recommended",
-    "plugin:prettier/recommended",
-    "prettier/react",
+    "plugin:jsx-a11y/recommended",
+    // (thuang) disable eslint formatting rules, so prettier can do its job
+    // Do not use `plugin:prettier/recommended` per doc below:
+    // https://prettier.io/docs/en/integrating-with-linters.html
+    "prettier",
   ],
   settings: {
-    polyfills: [
-      "TextDecoder",
-      "TextEncoder",
-      "fetch",
-      "Request",
-      "Response",
-      "Headers",
-      "AbortController",
-    ],
+    // AbortController is not supported in iOS Safari 10.3, Chrome 61
+    // Headers is not supported in iOS Safari 10.3
+    polyfills: ["Headers", "AbortController"],
   },
   env: { browser: true, commonjs: true, es6: true },
   globals: {
@@ -31,12 +28,16 @@ module.exports = {
     context: true,
     beforeEach: true,
   },
+  parser: "@babel/eslint-parser",
   parserOptions: {
     ecmaVersion: 2017,
     sourceType: "module",
     ecmaFeatures: {
       jsx: true,
       generators: true,
+    },
+    babelOptions: {
+      configFile: "./configuration/babel/babel.prod.js",
     },
   },
   rules: {

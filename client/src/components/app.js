@@ -1,4 +1,3 @@
-// jshint esversion: 6
 import React from "react";
 import Helmet from "react-helmet";
 import { connect } from "react-redux";
@@ -12,7 +11,6 @@ import Graph from "./graph/graph";
 import MenuBar from "./menubar";
 import Autosave from "./autosave";
 import Embedding from "./embedding";
-import TermsOfServicePrompt from "./termsPrompt";
 
 import actions from "../actions";
 
@@ -43,7 +41,7 @@ class App extends React.Component {
     const { loading, error, graphRenderCounter } = this.props;
     return (
       <Container>
-        <Helmet title="cellxgene" />
+        <Helmet title="CELL&times;GENE | Annotate" />
         {loading ? (
           <div
             style={{
@@ -76,7 +74,6 @@ class App extends React.Component {
                 <MenuBar />
                 <Embedding />
                 <Autosave />
-                <TermsOfServicePrompt />
                 <Legend viewportRef={viewportRef} />
                 <Graph key={graphRenderCounter} viewportRef={viewportRef} />
               </>

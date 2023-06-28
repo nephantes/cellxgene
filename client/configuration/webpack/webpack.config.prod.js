@@ -1,10 +1,9 @@
 const path = require("path");
+const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const { CleanWebpackPlugin } = require("clean-webpack-plugin");
 const TerserJSPlugin = require("terser-webpack-plugin");
-const CleanCss = require("clean-css");
-const OptimizeCSSAssetsPlugin = require("optimize-css-assets-webpack-plugin");
-const FaviconsWebpackPlugin = require("favicons-webpack-plugin");
+const CssMinimizerPlugin = require("css-minimizer-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 
 const { merge } = require("webpack-merge");
@@ -15,6 +14,7 @@ const CspHashPlugin = require("./cspHashPlugin");
 const sharedConfig = require("./webpack.config.shared");
 
 const fonts = path.resolve("src/fonts");
+const images = path.resolve("src/images");
 const nodeModules = path.resolve("node_modules");
 
 const prodConfig = {
@@ -28,8 +28,8 @@ const prodConfig = {
     minimize: true,
     minimizer: [
       new TerserJSPlugin({}),
-      new OptimizeCSSAssetsPlugin({
-        cssProcessor: CleanCss,
+      new CssMinimizerPlugin({
+        minify: CssMinimizerPlugin.cleanCssMinify,
       }),
     ],
   },
@@ -44,11 +44,11 @@ const prodConfig = {
       {
         test: /\.(jpg|png|gif|eot|svg|ttf|woff|woff2|otf)$/i,
         loader: "file-loader",
-        include: [nodeModules, fonts],
-        query: {
+        include: [nodeModules, fonts, images],
+        options: {
           name: "static/assets/[name]-[contenthash].[ext]",
           // (thuang): This is needed to make sure @font url path is '../static/assets/'
-          publicPath: "static/",
+          publicPath: "..",
         },
       },
     ],
@@ -65,26 +65,17 @@ const prodConfig = {
       protectWebpackAssets: false,
       cleanAfterEveryBuildPatterns: ["main.js", "main.css"],
     }),
-    new FaviconsWebpackPlugin({
-      logo: "./favicon.png",
-      prefix: "static/assets/",
-      favicons: {
-        icons: {
-          android: false,
-          appleIcon: false,
-          appleStartup: false,
-          coast: false,
-          firefox: false,
-          windows: false,
-          yandex: false,
-        },
-      },
-    }),
     new MiniCssExtractPlugin({
       filename: "static/[name]-[contenthash].css",
     }),
     new CspHashPlugin({
       filename: "csp-hashes.json",
+    }),
+    new webpack.DefinePlugin({
+      // webpack 5 no longer polyfills NodeJS modules, so fake the one we need
+      "process.env": JSON.stringify({
+        NODE_ENV: "production",
+      }),
     }),
   ],
   performance: {

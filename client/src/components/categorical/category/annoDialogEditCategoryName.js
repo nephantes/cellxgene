@@ -1,7 +1,7 @@
 import React from "react";
 import { connect } from "react-redux";
-import AnnoDialog from "../annoDialog";
-import LabelInput from "../labelInput";
+import AnnoDialog from "../../annoDialog";
+import LabelInput from "../../labelInput";
 import { labelPrompt } from "../labelUtil";
 
 import { AnnotationsHelpers } from "../../../util/stateManager";
@@ -10,7 +10,6 @@ import actions from "../../../actions";
 @connect((state) => ({
   annotations: state.annotations,
   schema: state.annoMatrix?.schema,
-  ontology: state.ontology,
 }))
 class AnnoDialogEditCategoryName extends React.PureComponent {
   constructor(props) {
@@ -90,13 +89,11 @@ class AnnoDialogEditCategoryName extends React.PureComponent {
     return false;
   };
 
-  instruction = (name) => {
-    return labelPrompt(
+  instruction = (name) => labelPrompt(
       this.editedCategoryNameError(name),
       "New, unique category name",
       ":"
     );
-  };
 
   allCategoryNames() {
     const { schema } = this.props;
@@ -105,8 +102,7 @@ class AnnoDialogEditCategoryName extends React.PureComponent {
 
   render() {
     const { newCategoryText } = this.state;
-    const { metadataField, annotations, ontology } = this.props;
-    const ontologyEnabled = ontology?.enabled ?? false;
+    const { metadataField, annotations } = this.props;
 
     return (
       <>
@@ -132,7 +128,7 @@ class AnnoDialogEditCategoryName extends React.PureComponent {
           annoInput={
             <LabelInput
               label={newCategoryText}
-              labelSuggestions={ontologyEnabled ? ontology.terms : null}
+              labelSuggestions={null}
               onChange={this.handleChangeOrSelect}
               onSelect={this.handleChangeOrSelect}
               inputProps={{

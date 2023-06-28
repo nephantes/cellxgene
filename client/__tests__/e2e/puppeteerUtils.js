@@ -12,7 +12,7 @@ export async function waitByID(testId, props = {}) {
 }
 
 export async function waitByClass(testClass, props = {}) {
-  await page.waitForSelector(`[data-testclass='${testClass}']`, props);
+  return page.waitForSelector(`[data-testclass='${testClass}']`, props);
 }
 
 export async function waitForAllByIds(testIds) {
@@ -32,7 +32,7 @@ export async function typeInto(testId, text) {
   const selector = getTestId(testId);
   // type ahead can be annoying if you don't pause before you type
   await page.click(selector);
-  await page.waitFor(200);
+  await page.waitForTimeout(200);
   await page.type(selector, text);
 }
 
@@ -42,7 +42,7 @@ export async function clearInputAndTypeInto(testId, text) {
   // only works for text without special characters
   // type ahead can be annoying if you don't pause before you type
   await page.click(selector);
-  await page.waitFor(200);
+  await page.waitForTimeout(200);
   // select all
   await page.click(selector, { clickCount: 3 });
   await page.keyboard.press("Backspace");
@@ -72,7 +72,7 @@ export async function clickOnUntil(testId, assert) {
     } catch (error) {
       retry += 1;
 
-      await page.waitFor(WAIT_FOR_MS);
+      await page.waitForTimeout(WAIT_FOR_MS);
     }
   }
 
@@ -100,12 +100,6 @@ export async function getElementCoordinates(testId) {
   });
 }
 
-async function clickTermsOfService() {
-  if (!(await isElementPresent(getTestId("tos-cookies-accept")))) return;
-
-  await clickOn("tos-cookies-accept");
-}
-
 async function nameNewAnnotation() {
   if (await isElementPresent(getTestId("annotation-dialog"))) {
     await typeInto("new-annotation-name", "ignoreE2E");
@@ -122,7 +116,6 @@ export async function goToPage(url) {
   });
 
   await nameNewAnnotation();
-  await clickTermsOfService();
 }
 
 export async function isElementPresent(selector, options) {

@@ -35,11 +35,15 @@ const Annotations = (
       const dataCollectionName =
         action.config.parameters?.["annotations-data-collection-name"] ?? null;
       const dataCollectionNameIsReadOnly =
-        action.config.parameters?.[
-          "annotations-data-collection-name-is-read-only"
-        ] ?? false;
+        (action.config.parameters?.[
+          "annotations-data-collection-is-read-only"
+        ] ??
+          false) &&
+        (action.config.parameters?.annotations_genesets_name_is_read_only ??
+          true);
+
       const promptForFilename =
-        action.config.parameters?.["user_annotation_collection_name_enabled"];
+        action.config.parameters?.user_annotation_collection_name_enabled;
       return {
         ...state,
         dataCollectionNameIsReadOnly,

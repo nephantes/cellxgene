@@ -1,15 +1,15 @@
 import { Colors } from "@blueprintjs/core";
 import { dispatchNetworkErrorMessageToUser } from "./util/actionHelpers";
-import * as ENV_DEFAULT from "../../environment.default.json";
+import ENV_DEFAULT from "../../environment.default.json";
 
-/* if a categorical metadata field has more options than this, truncate */
-export const maxCategoricalOptionsToDisplay = 200;
+/* overflow category values are created  using this string */
+export const overflowCategoryLabel = ": all other labels";
 
 /* default "unassigned" value for user-created categorical metadata */
 export const unassignedCategoryLabel = "unassigned";
 
 /*
-these are default values for configuration  the CLI may supply.
+these are default values for configuration the CLI may supply.
 See the REST API and CLI specs for more info.
 */
 export const configDefaults = {
@@ -20,6 +20,17 @@ export const configDefaults = {
     "diffexp-may-be-slow": false,
   },
   links: {},
+};
+
+/*
+Most configuration is stored in the reducer.  A handful of values
+are global and stored here.  They are typically set by the config
+action handler, which pull the information from the backend/CLI.
+All should be set here to their default value.
+*/
+export const globalConfig = {
+  /* if a categorical metadata field has more options than this, truncate */
+  maxCategoricalOptionsToDisplay: 200,
 };
 
 /* colors */
@@ -79,6 +90,9 @@ export const categoryDisplayStringMaxLength = 33;
 export const maxUserDefinedGenes = 25;
 export const maxGenes = 100;
 
+export const diffexpPopNamePrefix1 = "Pop1 high";
+export const diffexpPopNamePrefix2 = "Pop2 high";
+
 /* various timing-related behaviors */
 export const tooltipHoverOpenDelay = 1000; /* ms delay before a tooltip displays */
 export const tooltipHoverOpenDelayQuick = 500;
@@ -88,7 +102,7 @@ const CXG_SERVER_PORT =
 
 let _API;
 
-if (window.CELLXGENE && window.CELLXGENE.API) {
+if (typeof window !== "undefined" && window.CELLXGENE && window.CELLXGENE.API) {
   _API = window.CELLXGENE.API;
 } else {
   if (CXG_SERVER_PORT === undefined) {

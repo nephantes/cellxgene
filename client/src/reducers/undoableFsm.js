@@ -25,8 +25,7 @@ const createFsmTransitions = (
   skip,
   clear,
   save
-) => {
-  return [
+) => [
     /* graph selection brushing */
     {
       event: "graph brush start",
@@ -99,6 +98,12 @@ const createFsmTransitions = (
       from: "continuous histo select in progress",
       to: "done",
       action: cancelPending,
+    },
+    {
+      event: "continuous metadata histogram cancel",
+      from: "init",
+      to: "done",
+      action: save,
     },
     {
       event: "continuous metadata histogram end",
@@ -179,20 +184,6 @@ const createFsmTransitions = (
       action: applyPending,
     },
 
-    /* Clear Differential Expression button user action */
-    {
-      event: "clear differential expression",
-      from: "init",
-      to: "CDE Button in progress",
-      action: stashPending,
-    },
-    {
-      event: "clear scatterplot",
-      from: "CDE Button in progress",
-      to: "done",
-      action: applyPending,
-    },
-
     /* clear scatter plot button (eg, on scatterplot view) */
     {
       event: "clear scatterplot",
@@ -201,6 +192,5 @@ const createFsmTransitions = (
       action: save,
     },
   ];
-};
 
 export default createFsmTransitions;

@@ -9,9 +9,12 @@ with open("server/requirements.txt") as fh:
 with open("server/requirements-prepare.txt") as fh:
     requirements_prepare = fh.read().splitlines()
 
+with open("server/requirements-annotate.txt") as fh:
+    requirements_annotate = fh.read().splitlines()
+
 setup(
     name="cellxgene",
-    version="0.16.0",
+    version="1.1.2",
     packages=find_packages(),
     url="https://github.com/chanzuckerberg/cellxgene",
     license="MIT",
@@ -21,6 +24,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     install_requires=requirements,
+    python_requires=">=3.6",
     include_package_data=True,
     zip_safe=False,
     classifiers=[
@@ -39,5 +43,5 @@ setup(
         "Topic :: Scientific/Engineering :: Bio-Informatics",
     ],
     entry_points={"console_scripts": ["cellxgene = server.cli.cli:cli"]},
-    extras_require=dict(prepare=requirements_prepare),
+    extras_require=dict(prepare=requirements_prepare, annotate=requirements_annotate),
 )

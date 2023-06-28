@@ -2,7 +2,6 @@ const path = require("path");
 const fs = require("fs");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const ObsoleteWebpackPlugin = require("obsolete-webpack-plugin");
-const ScriptExtHtmlWebpackPlugin = require("script-ext-html-webpack-plugin");
 
 const src = path.resolve("src");
 const nodeModules = path.resolve("node_modules");
@@ -20,7 +19,6 @@ module.exports = {
   entry: [
     "core-js",
     "regenerator-runtime/runtime",
-    "fastestsmallesttextencoderdecoder",
     "whatwg-fetch",
     "abort-controller/polyfill",
     "./src/index",
@@ -41,7 +39,7 @@ module.exports = {
             loader: "css-loader",
             options: {
               modules: {
-                localIdentName: "[name]__[local]___[hash:base64:5]",
+                localIdentName: "[name]__[local]___[contenthash:base64:5]",
               },
               importLoaders: 1,
             },
@@ -66,9 +64,6 @@ module.exports = {
       name: "obsolete",
       template: obsoleteHTMLTemplate,
       promptOnNonTargetBrowser: false,
-    }),
-    new ScriptExtHtmlWebpackPlugin({
-      async: "obsolete",
     }),
   ],
 };

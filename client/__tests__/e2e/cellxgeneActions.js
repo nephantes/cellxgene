@@ -13,10 +13,7 @@ import {
   getTestClass,
   getTestId,
   isElementPresent,
-  goToPage,
 } from "./puppeteerUtils";
-
-import { appUrlBase } from "./config";
 
 export async function drag(testId, start, end, lasso = false) {
   const layout = await waitByID(testId);
@@ -61,11 +58,9 @@ export async function getAllHistograms(testclass, testIds) {
   const allHistograms = await getAllByClass(testclass);
 
   const testIDs = await Promise.all(
-    allHistograms.map((hist) => {
-      return page.evaluate((elem) => {
-        return elem.dataset.testid;
-      }, hist);
-    })
+    allHistograms.map((hist) =>
+      page.evaluate((elem) => elem.dataset.testid, hist)
+    )
   );
 
   return testIDs.map((id) => id.replace(/^histogram-/, ""));
@@ -176,6 +171,137 @@ export async function createCategory(categoryName) {
   await clickOn("submit-category");
 }
 
+/*
+
+  GENESET
+
+*/
+
+export async function colorByGeneset(genesetName) {
+  await clickOn(`${genesetName}:colorby-entire-geneset`);
+}
+
+export async function colorByGene(gene) {
+  await clickOn(`colorby-${gene}`);
+}
+
+export async function assertColorLegendLabel(label) {
+  const handle = await waitByID("continuous_legend_color_by_label");
+
+  const result = await handle.evaluate((node) =>
+    node.getAttribute("aria-label")
+  );
+
+  return expect(result).toBe(label);
+}
+
+export async function expandGeneset(genesetName) {
+  const expand = await waitByID(`${genesetName}:geneset-expand`);
+  const notExpanded = await expand.$(
+    "[data-testclass='geneset-expand-is-not-expanded']"
+  );
+  if (notExpanded) await clickOn(`${genesetName}:geneset-expand`);
+}
+
+export async function createGeneset(genesetName) {
+  await clickOnUntil("open-create-geneset-dialog", async () => {
+    await expect(page).toMatchElement(getTestId("create-geneset-input"));
+  });
+
+  await typeInto("create-geneset-input", genesetName);
+  await clickOn("submit-geneset");
+  await waitByClass("autosave-complete");
+}
+
+export async function editGenesetName(genesetName, editText) {
+  const editButton = `${genesetName}:edit-genesetName-mode`;
+  const submitButton = `${genesetName}:submit-geneset`;
+  await clickOnUntil(`${genesetName}:see-actions`, async () => {
+    await expect(page).toMatchElement(getTestId(editButton));
+  });
+  await clickOn(editButton);
+  await typeInto("rename-geneset-modal", editText);
+  await clickOn(submitButton);
+}
+
+export async function deleteGeneset(genesetName) {
+  const targetId = `${genesetName}:delete-geneset`;
+
+  await clickOnUntil(`${genesetName}:see-actions`, async () => {
+    await expect(page).toMatchElement(getTestId(targetId));
+  });
+
+  await clickOn(targetId);
+
+  await assertGenesetDoesNotExist(genesetName);
+  await waitByClass("autosave-complete");
+}
+
+export async function assertGenesetDoesNotExist(genesetName) {
+  const result = await isElementPresent(
+    getTestId(`${genesetName}:geneset-name`)
+  );
+  await expect(result).toBe(false);
+}
+
+export async function assertGenesetExists(genesetName) {
+  const handle = await waitByID(`${genesetName}:geneset-name`);
+
+  const result = await handle.evaluate((node) =>
+    node.getAttribute("aria-label")
+  );
+
+  return expect(result).toBe(genesetName);
+}
+
+/*
+
+  GENE
+
+*/
+
+export async function addGeneToSet(genesetName, geneToAddToSet) {
+  const submitButton = `${genesetName}:submit-gene`;
+
+  await clickOn(`${genesetName}:add-new-gene-to-geneset`);
+  await typeInto("add-genes", geneToAddToSet);
+  await clickOn(submitButton);
+}
+
+export async function removeGene(geneSymbol) {
+  const targetId = `delete-from-geneset:${geneSymbol}`;
+
+  await clickOn(targetId);
+
+  await waitByClass("autosave-complete");
+}
+
+export async function assertGeneExistsInGeneset(geneSymbol) {
+  const handle = await waitByID(`${geneSymbol}:gene-label`);
+
+  const result = await handle.evaluate((node) =>
+    node.getAttribute("aria-label")
+  );
+
+  return expect(result).toBe(geneSymbol);
+}
+
+export async function assertGeneDoesNotExist(geneSymbol) {
+  const result = await isElementPresent(getTestId(`${geneSymbol}:gene-label`));
+
+  await expect(result).toBe(false);
+}
+
+export async function expandGene(geneSymbol) {
+  await clickOn(`maximize-${geneSymbol}`);
+}
+
+/*
+
+  CATEGORY
+
+*/
+
 export async function duplicateCategory(categoryName) {
   await clickOn("open-annotation-dialog");
 
@@ -238,7 +364,7 @@ export async function createLabel(categoryName, labelName) {
    * 4. You will see `123` is persisted in the input box
    * 5. Expected behavior is to get an empty input box
    */
-  await page.waitFor(500);
+  await page.waitForTimeout(500);
 
   await clickOn(`${categoryName}:see-actions`);
 
@@ -316,73 +442,4 @@ export async function assertCategoryDoesNotExist(categoryName) {
   await expect(result).toBe(false);
 }
 
-export async function login() {
-  const email = `cellxgene-smoke-test+${process.env.DEPLOYMENT_STAGE}@chanzuckerberg.com`;
-  const password = "Test1111";
-
-  await goToPage(appUrlBase);
-
-  await clickOn("log-in");
-
-  // (thuang): Auth0 form is unstable and unsafe for input until verified
-  await waitUntilFormFieldStable('[name="email"]');
-
-  await expect(page).toFillForm("form", {
-    email,
-    password,
-  });
-
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: "networkidle0" }),
-    expect(page).toClick('[name="submit"]'),
-  ]);
-
-  expect(page.url()).toContain(appUrlBase);
-}
-
-export async function logout() {
-  await clickOnUntil("user-info", async () => {
-    await waitByID("log-out");
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "networkidle0" }),
-      clickOn("log-out"),
-    ]);
-  });
-
-  await waitByID("log-in");
-}
-
-async function waitUntilFormFieldStable(selector) {
-  const MAX_RETRY = 10;
-  const WAIT_FOR_MS = 200;
-
-  const EXPECTED_VALUE = "aaa";
-
-  let retry = 0;
-
-  while (retry < MAX_RETRY) {
-    try {
-      await expect(page).toFill(selector, EXPECTED_VALUE);
-
-      const fieldHandle = await expect(page).toMatchElement(selector);
-
-      const fieldValue = await page.evaluate(
-        (input) => input.value,
-        fieldHandle
-      );
-
-      expect(fieldValue).toBe(EXPECTED_VALUE);
-
-      break;
-    } catch (error) {
-      retry += 1;
-
-      await page.waitFor(WAIT_FOR_MS);
-    }
-  }
-
-  if (retry === MAX_RETRY) {
-    throw Error("clickOnUntil() assertion failed!");
-  }
-}
 /* eslint-enable no-await-in-loop -- await in loop is needed to emulate sequential user actions */

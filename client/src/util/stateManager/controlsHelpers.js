@@ -2,10 +2,8 @@
 Helper functions for the controls reducer
 */
 
-import _ from "lodash";
+import difference from "lodash.difference";
 
-import * as globals from "../../globals";
-import { rangeFill as fillRange } from "../range";
 import fromEntries from "../fromEntries";
 import { isCategoricalAnnotation } from "./annotationsHelpers";
 
@@ -29,39 +27,9 @@ Remember that option values can be ANY js type, except undefined/null.
 
       // number of options
       numCategoryValues: number,
-
-      // isTruncated - true if the options for selection has
-      // been truncated (ie, was too large to implement)
     }
   }
 */
-function topNCategories(colSchema, summary, N) {
-  /* return top N categories by occurrences in the data */
-  const { categories: allCategories } = colSchema;
-  const counts = allCategories.map(
-    (cat) => summary.categoryCounts.get(cat) ?? 0
-  );
-
-  if (allCategories.length <= N) {
-    return [allCategories, allCategories, counts];
-  }
-
-  const sortIndex = fillRange(new Array(allCategories.length)).sort(
-    (a, b) => counts[b] - counts[a]
-  );
-  const topNindices = new Set(sortIndex.slice(0, N));
-
-  const _topNCategories = [];
-  const topNCounts = [];
-  for (let i = 0; i < allCategories.length; i += 1) {
-    if (topNindices.has(i)) {
-      _topNCategories.push(allCategories[i]);
-      topNCounts.push(counts[i]);
-    }
-  }
-  return [allCategories, _topNCategories, topNCounts];
-}
-
 export function isSelectableCategoryName(schema, name) {
   const { index } = schema.annotations.obs;
   const colSchema = schema.annotations.obsByName[name];
@@ -85,7 +53,6 @@ export function selectableCategoryNames(schema, names) {
 }
 
 export function createCategorySummaryFromDfCol(dfCol, colSchema) {
-  const N = globals.maxCategoricalOptionsToDisplay;
   const { writable: isUserAnno } = colSchema;
 
   /*
@@ -94,21 +61,19 @@ export function createCategorySummaryFromDfCol(dfCol, colSchema) {
   if they are not actively used in the current annoMatrix view.
   */
   const summary = dfCol.summarizeCategorical();
-  const [
-    allCategoryValues,
-    categoryValues,
-    categoryValueCounts,
-  ] = topNCategories(colSchema, summary, N);
+  const { categories: allCategoryValues } = colSchema;
+  const categoryValues = allCategoryValues;
+  const categoryValueCounts = allCategoryValues.map(
+    (cat) => summary.categoryCounts.get(cat) ?? 0
+  );
   const categoryValueIndices = new Map(categoryValues.map((v, i) => [v, i]));
   const numCategoryValues = categoryValueIndices.size;
-  const isTruncated = categoryValues.length < summary.numCategories;
 
   return {
     allCategoryValues, // array: of natively typed category values (all of them)
     categoryValues, // array: of natively typed category values (top N only)
     categoryValueIndices, // map: category value (native type) -> category index (top N only)
     numCategoryValues, // number: of values in the category (top N)
-    isTruncated, // bool: true if list was truncated (ie, if topN != all)
     categoryValueCounts, // array: cardinality of each category, (top N)
     isUserAnno, // bool
   };
@@ -145,7 +110,7 @@ export function pruneVarDataCache(varData, needed) {
 
   const { colIndex } = varData;
   const all = colIndex.labels();
-  const unused = _.difference(all, needed);
+  const unused = difference(all, needed);
   if (unused.length > 0) {
     // sort by offset in the dataframe - ie, psuedo-LRU
     unused.sort((a, b) => colIndex.getOffset(a) - colIndex.getOffset(b));
@@ -156,13 +121,4 @@ export function pruneVarDataCache(varData, needed) {
     }
   }
   return varData;
-}
-
-export function subsetAndResetGeneLists(state) {
-  const { userDefinedGenes, diffexpGenes } = state;
-  const newUserDefinedGenes = _.uniq(
-    [].concat(userDefinedGenes, diffexpGenes)
-  ).slice(0, globals.maxGenes);
-  const newDiffExpGenes = [];
-  return [newUserDefinedGenes, newDiffExpGenes];
 }

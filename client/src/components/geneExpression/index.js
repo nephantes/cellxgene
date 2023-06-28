@@ -1,59 +1,96 @@
-/* rc slider https://www.npmjs.com/package/rc-slider */
-
 import React from "react";
-import _ from "lodash";
 import { connect } from "react-redux";
-import HistogramBrush from "../brushableHistogram";
-import * as globals from "../../globals";
-import AddGenes from "./addGenes";
+import { Button, H4, Icon } from "@blueprintjs/core";
+import { IconNames } from "@blueprintjs/icons";
 
-@connect((state) => {
-  return {
-    userDefinedGenes: state.controls.userDefinedGenes,
-    differential: state.differential,
-  };
-})
+import GeneSet from "./geneSet";
+import QuickGene from "./quickGene";
+import CreateGenesetDialogue from "./menus/createGenesetDialogue";
+
+@connect((state) => ({
+    genesets: state.genesets.genesets,
+  }))
 class GeneExpression extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { geneSetsExpanded: true };
+  }
+
+  renderGeneSets = () => {
+    const sets = [];
+    const { genesets } = this.props;
+
+    for (const [name, geneset] of genesets) {
+      sets.push(
+        <GeneSet
+          key={name}
+          setGenes={geneset.genes}
+          setName={name}
+          genesetDescription={geneset.genesetDescription}
+        />
+      );
+    }
+    return sets;
+  };
+
+  handleActivateCreateGenesetMode = () => {
+    const { dispatch } = this.props;
+    const { geneSetsExpanded } = this.state;
+    dispatch({ type: "geneset: activate add new geneset mode" });
+    if (!geneSetsExpanded) {
+      this.setState((state) => ({ ...state, geneSetsExpanded: true }));
+    }
+  };
+
+  handleExpandGeneSets = () => {
+    this.setState((state) => ({ ...state, geneSetsExpanded: !state.geneSetsExpanded }));
+  };
+
   render() {
-    const { userDefinedGenes, differential } = this.props;
+    const { geneSetsExpanded } = this.state;
     return (
-      <div
-        style={{
-          borderBottom: `1px solid ${globals.lighterGrey}`,
-        }}
-      >
+      <div>
+        <QuickGene />
         <div>
-          <AddGenes />
-          {userDefinedGenes.length > 0
-            ? _.map(userDefinedGenes, (geneName, index) => {
-                return (
-                  <HistogramBrush
-                    key={geneName}
-                    field={geneName}
-                    zebra={index % 2 === 0}
-                    isUserDefined
-                  />
-                );
-              })
-            : null}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "row",
+              justifyContent: "space-between",
+            }}
+          >
+            <H4
+              role="menuitem"
+              tabIndex="0"
+              data-testclass="geneset-heading-expand"
+              onKeyPress={this.handleExpandGeneSets}
+              style={{
+                cursor: "pointer",
+              }}
+              onClick={this.handleExpandGeneSets}
+            >
+              Gene Sets{" "}
+              {geneSetsExpanded ? (
+                <Icon icon={IconNames.CHEVRON_DOWN} />
+              ) : (
+                <Icon icon={IconNames.CHEVRON_RIGHT} />
+              )}
+            </H4>
+
+            <div style={{ marginBottom: 10, position: "relative", top: -2 }}>
+              <Button
+                data-testid="open-create-geneset-dialog"
+                onClick={this.handleActivateCreateGenesetMode}
+                intent="primary"
+              >
+                Create new
+              </Button>
+            </div>
+          </div>
+          <CreateGenesetDialogue />
         </div>
-        <div>
-          {differential.diffExp
-            ? _.map(differential.diffExp, (value, index) => {
-                return (
-                  <HistogramBrush
-                    key={value[0]}
-                    field={value[0]}
-                    zebra={index % 2 === 0}
-                    isDiffExp
-                    logFoldChange={value[1]}
-                    pval={value[2]}
-                    pvalAdj={value[3]}
-                  />
-                );
-              })
-            : null}
-        </div>
+
+        {geneSetsExpanded && <div>{this.renderGeneSets()}</div>}
       </div>
     );
   }

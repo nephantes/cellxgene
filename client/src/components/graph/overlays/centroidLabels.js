@@ -14,6 +14,7 @@ export default
   dilatedValue: state.pointDilation.categoryField,
   categoricalSelection: state.categoricalSelection,
   showLabels: state.centroidLabels?.showLabels,
+  genesets: state.genesets.genesets,
 }))
 class CentroidLabels extends PureComponent {
   static watchAsync(props, prevProps) {
@@ -60,7 +61,7 @@ class CentroidLabels extends PureComponent {
     dispatch({
       type: "category value mouse hover start",
       metadataField: colorAccessor,
-      categoryField: label,
+      label,
     });
   };
 
@@ -69,15 +70,15 @@ class CentroidLabels extends PureComponent {
     dispatch({
       type: "category value mouse hover end",
       metadataField: colorAccessor,
-      categoryField: label,
+      label,
     });
   };
 
   colorByQuery() {
-    const { annoMatrix, colors } = this.props;
+    const { annoMatrix, colors, genesets } = this.props;
     const { schema } = annoMatrix;
     const { colorMode, colorAccessor } = colors;
-    return createColorQuery(colorMode, colorAccessor, schema);
+    return createColorQuery(colorMode, colorAccessor, schema, genesets);
   }
 
   async fetchData() {
@@ -134,7 +135,7 @@ class CentroidLabels extends PureComponent {
 
               // Mirror LSB middle truncation
               let displayLabel = label;
-              if (displayLabel.length > categoryLabelDisplayStringLongLength) {
+              if (displayLabel?.length > categoryLabelDisplayStringLongLength) {
                 displayLabel = `${label.slice(
                   0,
                   categoryLabelDisplayStringLongLength / 2

@@ -1,6 +1,6 @@
-import { doBinaryRequest, _dubEncURIComp } from "./fetchHelpers";
+import { doBinaryRequest, doFetch } from "./fetchHelpers";
 import { matrixFBSToDataframe } from "../util/stateManager/matrix";
-import { _getColumnSchema, _normalizeCategoricalSchema } from "./schema";
+import { _getColumnSchema } from "./schema";
 import {
   addObsAnnoColumn,
   removeObsAnnoColumn,
@@ -12,6 +12,17 @@ import { isArrayOrTypedArray } from "../util/typeHelpers";
 import { _whereCacheCreate } from "./whereCache";
 import AnnoMatrix from "./annoMatrix";
 import PromiseLimit from "../util/promiseLimit";
+import {
+  _expectSimpleQuery,
+  _expectComplexQuery,
+  _urlEncodeLabelQuery,
+  _urlEncodeComplexQuery,
+  _hashStringValues,
+} from "./query";
+import {
+  normalizeResponse,
+  normalizeWritableCategoricalSchema,
+} from "./normalize";
 
 const promiseThrottle = new PromiseLimit(5);
 
@@ -115,7 +126,7 @@ export default class AnnoMatrixLoader extends AnnoMatrix {
       data = new Ctor(this.nObs).fill(value);
     }
     newAnnoMatrix._cache.obs = this._cache.obs.withCol(colName, data);
-    _normalizeCategoricalSchema(
+    normalizeWritableCategoricalSchema(
       colSchema,
       newAnnoMatrix._cache.obs.col(colName)
     );
@@ -223,27 +234,23 @@ export default class AnnoMatrixLoader extends AnnoMatrix {
     /*
     _doLoad - evaluates the query against the field. Returns:
       * whereCache update: column query map mapping the query to the column labels
-      * Dataframe containing the new colums (one per dimension)
+      * Dataframe containing the new columns (one per dimension)
     */
-    let urlQuery;
-    let urlBase;
+    let doRequest;
     let priority = 10; // default fetch priority
 
     switch (field) {
       case "obs":
       case "var": {
-        urlBase = `${this.baseURL}annotations/${field}`;
-        urlQuery = _encodeQuery("annotation-name", query);
+        doRequest = _obsOrVarLoader(this.baseURL, field, query);
         break;
       }
       case "X": {
-        urlBase = `${this.baseURL}data/var`;
-        urlQuery = _encodeQuery(undefined, query);
+        doRequest = _XLoader(this.baseURL, field, query);
         break;
       }
       case "emb": {
-        urlBase = `${this.baseURL}layout/obs`;
-        urlQuery = _encodeQuery("layout-name", query);
+        doRequest = _embLoader(this.baseURL, field, query);
         priority = 0; // high prio load for embeddings
         break;
       }
@@ -251,13 +258,8 @@ export default class AnnoMatrixLoader extends AnnoMatrix {
         throw new Error("Unknown field name");
     }
 
-    const url = `${urlBase}?${urlQuery}`;
-    const buffer = await promiseThrottle.priorityAdd(
-      priority,
-      doBinaryRequest,
-      url
-    );
-    const result = matrixFBSToDataframe(buffer);
+    const buffer = await promiseThrottle.priorityAdd(priority, doRequest);
+    let result = matrixFBSToDataframe(buffer);
     if (!result || result.isEmpty()) throw Error("Unknown field/col");
 
     const whereCacheUpdate = _whereCacheCreate(
@@ -266,13 +268,7 @@ export default class AnnoMatrixLoader extends AnnoMatrix {
       result.colIndex.labels()
     );
 
-    if (field === "obs") {
-      /* cough, cough - see comment on method */
-      _normalizeCategoricalSchema(
-        this.schema.annotations.obsByName[query],
-        result.col(query)
-      );
-    }
+    result = normalizeResponse(field, query, this.schema, result);
 
     return [whereCacheUpdate, result];
   }
@@ -281,17 +277,6 @@ export default class AnnoMatrixLoader extends AnnoMatrix {
 /*
 Utility functions below
 */
-
-function _encodeQuery(colKey, q) {
-  if (typeof q === "object") {
-    const { field: queryField, column: queryColumn, value: queryValue } = q;
-    return `${_dubEncURIComp(queryField)}:${_dubEncURIComp(
-      queryColumn
-    )}=${_dubEncURIComp(queryValue)}`;
-  }
-  if (!colKey) throw new Error("Unsupported query by name");
-  return `${colKey}=${encodeURIComponent(q)}`;
-}
 
 function _writableCheck(colSchema) {
   if (!colSchema?.writable) {
@@ -304,4 +289,58 @@ function _writableCategoryTypeCheck(colSchema) {
   if (colSchema.type !== "categorical") {
     throw new Error("column must be categorical");
   }
+}
+
+function _embLoader(baseURL, _field, query) {
+  _expectSimpleQuery(query);
+
+  const urlBase = `${baseURL}layout/obs`;
+  const urlQuery = _urlEncodeLabelQuery("layout-name", query);
+  const url = `${urlBase}?${urlQuery}`;
+  return () => doBinaryRequest(url);
+}
+
+function _obsOrVarLoader(baseURL, field, query) {
+  _expectSimpleQuery(query);
+
+  const urlBase = `${baseURL}annotations/${field}`;
+  const urlQuery = _urlEncodeLabelQuery("annotation-name", query);
+  const url = `${urlBase}?${urlQuery}`;
+  return () => doBinaryRequest(url);
+}
+
+function _XLoader(baseURL, field, query) {
+  _expectComplexQuery(query);
+
+  if (query.where) {
+    const urlBase = `${baseURL}data/var`;
+    const urlQuery = _urlEncodeComplexQuery(query);
+    const url = `${urlBase}?${urlQuery}`;
+    return () => doBinaryRequest(url);
+  }
+
+  if (query.summarize) {
+    const urlBase = `${baseURL}summarize/var`;
+    const urlQuery = _urlEncodeComplexQuery(query);
+
+    if (urlBase.length + urlQuery.length < 2000) {
+      const url = `${urlBase}?${urlQuery}`;
+      return () => doBinaryRequest(url);
+    }
+
+    const url = `${urlBase}?key=${_hashStringValues([urlQuery])}`;
+    return async () => {
+      const res = await doFetch(url, {
+        method: "POST",
+        body: urlQuery,
+        headers: new Headers({
+          Accept: "application/octet-stream",
+          "Content-Type": "application/x-www-form-urlencoded",
+        }),
+      });
+      return res.arrayBuffer();
+    };
+  }
+
+  throw new Error("Unknown query structure");
 }

@@ -1,22 +1,23 @@
 from abc import ABCMeta, abstractmethod
 from os.path import basename, splitext
-
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from server_timing import Timing as ServerTiming
 
 from server.common.config.app_config import AppConfig
-from server.common.constants import Axis
-from server.common.errors import FilterError, JSONEncodingValueError, ExceedsLimitError
-from server.common.utils.utils import jsonify_numpy
-from server.data_common.fbs.matrix import encode_matrix_fbs
+from server.common.constants import Axis, XApproximateDistribution
+from server.common.errors import FilterError, JSONEncodingValueError, ExceedsLimitError, UnsupportedSummaryMethod
+from server.common.utils.utils import jsonify_strict
+from server.common.fbs.matrix import encode_matrix_fbs
+from server.common.genesets import validate_gene_sets
 
 
 class DataAdaptor(metaclass=ABCMeta):
     """Base class for loading and accessing matrix data"""
 
     def __init__(self, data_locator, app_config, dataset_config=None):
-        if type(app_config) != AppConfig:
+        if not isinstance(app_config, AppConfig):
             raise TypeError("config expected to be of type AppConfig")
 
         # location to the dataset
@@ -25,15 +26,10 @@ class DataAdaptor(metaclass=ABCMeta):
         # config is the application configuration
         self.app_config = app_config
         self.server_config = self.app_config.server_config
-        self.dataset_config = dataset_config or app_config.default_dataset_config
+        self.dataset_config = dataset_config or app_config.dataset_config
 
         # parameters set by this data adaptor based on the data.
         self.parameters = {}
-        self.uri_path = None
-
-    def set_uri_path(self, path):
-        # uri path to the dataset, e.g. /d/<datasetname>
-        self.uri_path = path
 
     @staticmethod
     @abstractmethod
@@ -71,15 +67,14 @@ class DataAdaptor(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def compute_embedding(self, method, filter):
-        """compute a new embedding on the specified obs subset, and return the embedding schema. """
-        pass
-
-    @abstractmethod
     def get_X_array(self, obs_mask=None, var_mask=None):
         """return the X array, possibly filtered by obs_mask or var_mask.
         the return type is either ndarray or scipy.sparse.spmatrix."""
         pass
+
+    def get_X_approximate_distribution(self) -> XApproximateDistribution:
+        """return the approximate distribution of the X matrix."""
+        return XApproximateDistribution.NORMAL
 
     @abstractmethod
     def get_shape(self):
@@ -161,7 +156,7 @@ class DataAdaptor(metaclass=ABCMeta):
     def _index_filter_to_mask(self, filter, count):
         mask = np.zeros((count,), dtype=np.bool)
         for i in filter:
-            if type(i) == list:
+            if isinstance(i, list):
                 mask[i[0] : i[1]] = True
             else:
                 mask[i] = True
@@ -266,6 +261,10 @@ class DataAdaptor(metaclass=ABCMeta):
 
         return labels_df
 
+    def check_new_gene_sets(self, genesets, context=None):
+        var_names = set(self.query_var_array(self.parameters.get("var_names")))
+        return validate_gene_sets(genesets, var_names)
+
     def data_frame_to_fbs_matrix(self, filter, axis):
         """
         Retrieves data 'X' and returns in a flatbuffer Matrix.
@@ -324,10 +323,15 @@ class DataAdaptor(metaclass=ABCMeta):
         ):
             raise ExceedsLimitError("Diffexp request exceeds max cell count limit")
 
-        result = self.compute_diffexp_ttest(obs_mask_A, obs_mask_B, top_n, self.dataset_config.diffexp__lfc_cutoff)
+        result = self.compute_diffexp_ttest(
+            maskA=obs_mask_A,
+            maskB=obs_mask_B,
+            top_n=top_n,
+            lfc_cutoff=self.dataset_config.diffexp__lfc_cutoff,
+        )
 
         try:
-            return jsonify_numpy(result)
+            return jsonify_strict(result)
         except ValueError:
             raise JSONEncodingValueError("Error encoding differential expression to JSON")
 
@@ -338,7 +342,7 @@ class DataAdaptor(metaclass=ABCMeta):
     @staticmethod
     def normalize_embedding(embedding):
         """Normalize embedding layout to meet client assumptions.
-           Embedding is an ndarray, shape (n_obs, n)., where n is normally 2
+        Embedding is an ndarray, shape (n_obs, n)., where n is normally 2
         """
 
         # scale isotropically
@@ -394,3 +398,26 @@ class DataAdaptor(metaclass=ABCMeta):
         except RuntimeError:
             lastmod = None
         return lastmod
+
+    def summarize_var(self, method, filter, query_hash):
+        if method != "mean":
+            raise UnsupportedSummaryMethod("Unknown gene set summary method.")
+
+        obs_selector, var_selector = self._filter_to_mask(filter)
+        if obs_selector is not None:
+            raise FilterError("filtering on obs unsupported")
+
+        # if no filter, just return zeros.  We don't have a use case
+        # for summarizing the entire X without a filter, and it would
+        # potentially be quite compute / memory intensive.
+        if var_selector is None or np.count_nonzero(var_selector) == 0:
+            mean = np.zeros((self.get_shape()[0], 1), dtype=np.float32)
+        else:
+            X = self.get_X_array(obs_selector, var_selector)
+            if sparse.issparse(X):
+                mean = X.mean(axis=1).A
+            else:
+                mean = X.mean(axis=1, keepdims=True)
+
+        col_idx = pd.Index([query_hash])
+        return encode_matrix_fbs(mean, col_idx=col_idx, row_idx=None)

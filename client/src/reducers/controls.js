@@ -1,7 +1,5 @@
-// jshint esversion: 6
-
-import _ from "lodash";
-import { subsetAndResetGeneLists } from "../util/stateManager/controlsHelpers";
+import uniq from "lodash.uniq";
+import filter from "lodash.filter";
 
 const Controls = (
   state = {
@@ -12,7 +10,6 @@ const Controls = (
     // all of the data + selection state
     userDefinedGenes: [],
     userDefinedGenesLoading: false,
-    diffexpGenes: [],
 
     resettingInterface: false,
     graphInteractionMode: "select",
@@ -20,8 +17,6 @@ const Controls = (
     scatterplotXXaccessor: null, // just easier to read
     scatterplotYYaccessor: null,
     graphRenderCounter: 0 /* integer as <Component key={graphRenderCounter} - a change in key forces a remount */,
-
-    datasetDrawer: false,
   },
   action
 ) => {
@@ -46,26 +41,16 @@ const Controls = (
       };
     }
     case "reset subset": {
-      const [newUserDefinedGenes, newDiffExpGenes] = subsetAndResetGeneLists(
-        state
-      );
       return {
         ...state,
         resettingInterface: false,
-        userDefinedGenes: newUserDefinedGenes,
-        diffexpGenes: newDiffExpGenes,
       };
     }
     case "subset to selection": {
-      const [newUserDefinedGenes, newDiffExpGenes] = subsetAndResetGeneLists(
-        state
-      );
       return {
         ...state,
         loading: false,
         error: null,
-        userDefinedGenes: newUserDefinedGenes,
-        diffexpGenes: newDiffExpGenes,
       };
     }
     case "request user defined gene started": {
@@ -82,7 +67,7 @@ const Controls = (
     }
     case "request user defined gene success": {
       const { userDefinedGenes } = state;
-      const _userDefinedGenes = _.uniq(
+      const _userDefinedGenes = uniq(
         userDefinedGenes.concat(action.data.genes)
       );
       return {
@@ -91,22 +76,9 @@ const Controls = (
         userDefinedGenesLoading: false,
       };
     }
-    case "request differential expression success": {
-      const diffexpGenes = action.data.map((v) => v[0]);
-      return {
-        ...state,
-        diffexpGenes,
-      };
-    }
-    case "clear differential expression": {
-      return {
-        ...state,
-        diffexpGenes: [],
-      };
-    }
     case "clear user defined gene": {
       const { userDefinedGenes } = state;
-      const newUserDefinedGenes = _.filter(
+      const newUserDefinedGenes = filter(
         userDefinedGenes,
         (d) => d !== action.data
       );
@@ -163,12 +135,6 @@ const Controls = (
         scatterplotXXaccessor: null,
         scatterplotYYaccessor: null,
       };
-
-    /**************************
-          Dataset Drawer
-     **************************/
-    case "toggle dataset drawer":
-      return { ...state, datasetDrawer: !state.datasetDrawer };
 
     default:
       return state;

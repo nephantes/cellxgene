@@ -15,7 +15,7 @@ dist/
 *.egg-info
 
 # Environments
-venv/
+venv*/
 cellxgene/
 
 # client build
@@ -54,3 +54,6 @@ client/.eslintcache
 
 # E2E Testing
 ignoreE2E*
+
+# annotate subcmd
+.models_cache

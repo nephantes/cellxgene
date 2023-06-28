@@ -1,14 +1,13 @@
 import React from "react";
 import { connect } from "react-redux";
-import AnnoDialog from "../annoDialog";
-import LabelInput from "../labelInput";
+import AnnoDialog from "../../annoDialog";
+import LabelInput from "../../labelInput";
 import { labelPrompt, isLabelErroneous } from "../labelUtil";
 import actions from "../../../actions";
 
 @connect((state) => ({
   annotations: state.annotations,
   schema: state.annoMatrix?.schema,
-  ontology: state.ontology,
   obsCrossfilter: state.obsCrossfilter,
 }))
 class Category extends React.PureComponent {
@@ -57,13 +56,11 @@ class Category extends React.PureComponent {
   };
 
   labelNameError = (name) => {
-    const { metadataField, ontology, schema } = this.props;
-    return isLabelErroneous(name, metadataField, ontology, schema);
+    const { metadataField, schema } = this.props;
+    return isLabelErroneous(name, metadataField, schema);
   };
 
-  instruction = (label) => {
-    return labelPrompt(this.labelNameError(label), "New, unique label", ":");
-  };
+  instruction = (label) => labelPrompt(this.labelNameError(label), "New, unique label", ":");
 
   handleChangeOrSelect = (label) => {
     this.setState({ newLabelText: label });
@@ -71,8 +68,7 @@ class Category extends React.PureComponent {
 
   render() {
     const { newLabelText } = this.state;
-    const { metadataField, annotations, ontology, obsCrossfilter } = this.props;
-    const ontologyEnabled = ontology?.enabled ?? false;
+    const { metadataField, annotations, obsCrossfilter } = this.props;
 
     return (
       <>
@@ -97,7 +93,7 @@ class Category extends React.PureComponent {
           handleCancel={this.disableAddNewLabelMode}
           annoInput={
             <LabelInput
-              labelSuggestions={ontologyEnabled ? ontology.terms : null}
+              labelSuggestions={null}
               onChange={this.handleChangeOrSelect}
               onSelect={this.handleChangeOrSelect}
               inputProps={{

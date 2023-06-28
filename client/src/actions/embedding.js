@@ -11,7 +11,7 @@ export async function _switchEmbedding(
   newEmbeddingName
 ) {
   /*
-  DRY helper used by this and reembedding action creators
+  DRY helper used by embedding action creators
   */
   const base = prevAnnoMatrix.base();
   const embeddingDf = await base.fetch("emb", newEmbeddingName);
@@ -25,27 +25,23 @@ export async function _switchEmbedding(
   return [annoMatrix, obsCrossfilter];
 }
 
-export const layoutChoiceAction = (newLayoutChoice) => async (
-  dispatch,
-  getState
-) => {
-  /*
+export const layoutChoiceAction =
+  (newLayoutChoice) => async (dispatch, getState) => {
+    /*
   On layout choice, make sure we have selected all on the previous layout, AND the new
   layout.
   */
-  const {
-    annoMatrix: prevAnnoMatrix,
-    obsCrossfilter: prevCrossfilter,
-  } = getState();
-  const [annoMatrix, obsCrossfilter] = await _switchEmbedding(
-    prevAnnoMatrix,
-    prevCrossfilter,
-    newLayoutChoice
-  );
-  dispatch({
-    type: "set layout choice",
-    layoutChoice: newLayoutChoice,
-    obsCrossfilter,
-    annoMatrix,
-  });
-};
+    const { annoMatrix: prevAnnoMatrix, obsCrossfilter: prevCrossfilter } =
+      getState();
+    const [annoMatrix, obsCrossfilter] = await _switchEmbedding(
+      prevAnnoMatrix,
+      prevCrossfilter,
+      newLayoutChoice
+    );
+    dispatch({
+      type: "set layout choice",
+      layoutChoice: newLayoutChoice,
+      obsCrossfilter,
+      annoMatrix,
+    });
+  };

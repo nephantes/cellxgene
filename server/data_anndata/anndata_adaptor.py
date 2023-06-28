@@ -1,22 +1,20 @@
 import warnings
-from datetime import datetime
 
 import anndata
 import numpy as np
 from packaging import version
 from pandas.core.dtypes.dtypes import CategoricalDtype
 from scipy import sparse
-from server_timing import Timing as ServerTiming
 
-import server.compute.diffexp_generic as diffexp_generic
+import server.common.compute.diffexp_generic as diffexp_generic
+import server.common.compute.estimate_distribution as estimate_distribution
 from server.common.colors import convert_anndata_category_colors_to_cxg_category_colors
-from server.common.constants import Axis, MAX_LAYOUTS
+from server.common.constants import Axis, MAX_LAYOUTS, XApproximateDistribution
 from server.common.corpora import corpora_get_props_from_anndata
-from server.common.errors import PrepareError, DatasetAccessError, FilterError
+from server.common.errors import PrepareError, DatasetAccessError
 from server.common.utils.type_conversion_utils import get_schema_type_hint_of_array
-from server.compute.scanpy import scanpy_umap
 from server.data_common.data_adaptor import DataAdaptor
-from server.data_common.fbs.matrix import encode_matrix_fbs
+from server.common.fbs.matrix import encode_matrix_fbs
 
 anndata_version = version.parse(str(anndata.__version__)).release
 
@@ -31,6 +29,7 @@ class AnndataAdaptor(DataAdaptor):
     def __init__(self, data_locator, app_config=None, dataset_config=None):
         super().__init__(data_locator, app_config, dataset_config)
         self.data = None
+        self.X_approximate_distribution = None
         self._load_data(data_locator)
         self._validate_and_initialize()
 
@@ -68,11 +67,11 @@ class AnndataAdaptor(DataAdaptor):
 
     @staticmethod
     def _create_unique_column_name(df, col_name_prefix):
-        """ given the columns of a dataframe, and a name prefix, return a column name which
-            does not exist in the dataframe, AND which is prefixed by `prefix`
+        """given the columns of a dataframe, and a name prefix, return a column name which
+        does not exist in the dataframe, AND which is prefixed by `prefix`
 
-            The approach is to append a numeric suffix, starting at zero and increasing by
-            one, until an unused name is found (eg, prefix_0, prefix_1, ...).
+        The approach is to append a numeric suffix, starting at zero and increasing by
+        one, until an unused name is found (eg, prefix_0, prefix_1, ...).
         """
         suffix = 0
         while f"{col_name_prefix}{suffix}" in df:
@@ -126,7 +125,11 @@ class AnndataAdaptor(DataAdaptor):
 
     def _create_schema(self):
         self.schema = {
-            "dataframe": {"nObs": self.cell_count, "nVar": self.gene_count, "type": str(self.data.X.dtype)},
+            "dataframe": {
+                "nObs": self.cell_count,
+                "nVar": self.gene_count,
+                **get_schema_type_hint_of_array(self.data.X),
+            },
             "annotations": {
                 "obs": {"index": self.parameters.get("obs_names"), "columns": []},
                 "var": {"index": self.parameters.get("var_names"), "columns": []},
@@ -171,10 +174,14 @@ class AnndataAdaptor(DataAdaptor):
         except MemoryError:
             raise DatasetAccessError("Out of memory - file is too large for available memory.")
         except Exception:
-            raise DatasetAccessError(
+            import traceback
+            message = (
                 "File not found or is inaccessible. File must be an .h5ad object. "
                 "Please check your input and try again."
-            )
+                )
+            if self.server_config.app__verbose:
+                message += f"\n{traceback.format_exc()}"
+            raise DatasetAccessError(message)
 
     def _validate_and_initialize(self):
         if anndata_version_is_pre_070():
@@ -193,16 +200,23 @@ class AnndataAdaptor(DataAdaptor):
         self.gene_count = self.data.shape[1]
         self._create_schema()
 
+        if self.dataset_config.X_approximate_distribution == "auto":
+            """Lazy evaluate the heuristic if we are backed."""
+            if not self.data.isbacked:
+                self.X_approximate_distribution = estimate_distribution.estimate_approximate_distribution(self.data.X)
+        else:
+            self.X_approximate_distribution = self.dataset_config.X_approximate_distribution
+
         # heuristic
         n_values = self.data.shape[0] * self.data.shape[1]
         if (n_values > 1e8 and self.server_config.adaptor__anndata_adaptor__backed is True) or (n_values > 5e8):
             self.parameters.update({"diffexp_may_be_slow": True})
 
     def _is_valid_layout(self, arr):
-        """ return True if this layout data is a valid array for front-end presentation:
-            * ndarray, dtype float/int/uint
-            * with shape (n_obs, >= 2)
-            * with all values finite or NaN (no +Inf or -Inf)
+        """return True if this layout data is a valid array for front-end presentation:
+        * ndarray, dtype float/int/uint
+        * with shape (n_obs, >= 2)
+        * with all values finite or NaN (no +Inf or -Inf)
         """
         is_valid = type(arr) == np.ndarray and arr.dtype.kind in "fiu"
         is_valid = is_valid and arr.shape[0] == self.data.n_obs and arr.shape[1] >= 2
@@ -222,10 +236,18 @@ class AnndataAdaptor(DataAdaptor):
                 "Anndata data matrix is sparse, but not a CSC (columnar) matrix.  "
                 "Performance may be improved by using CSC."
             )
-        if self.data.X.dtype != "float32":
+        if self.data.X.dtype > np.dtype(np.float32):
             warnings.warn(
                 f"Anndata data matrix is in {self.data.X.dtype} format not float32. " f"Precision may be truncated."
             )
+        if self.data.X.dtype < np.float32:
+            if self.data.isbacked:
+                raise DatasetAccessError(f"Data matrix in {self.data.X.dtype} format is not supported in backed mode."
+                                         " Please reload without --backed, or convert matrix to float32")
+            warnings.warn(
+                f"Anndata data matrix is in unsupported {self.data.X.dtype} format -- will be cast to float32"
+            )
+            self.data.X = self.data.X.astype(np.float32)
         for ax in Axis:
             curr_axis = getattr(self.data, str(ax))
             for ann in curr_axis:
@@ -301,28 +323,6 @@ class AnndataAdaptor(DataAdaptor):
         full_embedding = self.data.obsm[f"X_{ename}"]
         return full_embedding[:, 0:dims]
 
-    def compute_embedding(self, method, obsFilter):
-        if Axis.VAR in obsFilter:
-            raise FilterError("Observation filters may not contain variable conditions")
-        if method != "umap":
-            raise NotImplementedError(f"re-embedding method {method} is not available.")
-        try:
-            shape = self.get_shape()
-            obs_mask = self._axis_filter_to_mask(Axis.OBS, obsFilter["obs"], shape[0])
-        except (KeyError, IndexError):
-            raise FilterError("Error parsing filter")
-        with ServerTiming.time("layout.compute"):
-            X_umap = scanpy_umap(self.data, obs_mask)
-
-        # Server picks reemedding name, which must not collide with any other
-        # embedding name generated by this backend.
-        name = f"reembed:{method}_{datetime.now().isoformat(timespec='milliseconds')}"
-        dims = [f"{name}_0", f"{name}_1"]
-        layout_schema = {"name": name, "type": "float32", "dims": dims}
-        self.schema["layout"]["obs"].append(layout_schema)
-        self.data.obsm[f"X_{name}"] = X_umap
-        return layout_schema
-
     def compute_diffexp_ttest(self, maskA, maskB, top_n=None, lfc_cutoff=None):
         if top_n is None:
             top_n = self.dataset_config.diffexp__top_n
@@ -334,12 +334,28 @@ class AnndataAdaptor(DataAdaptor):
         return convert_anndata_category_colors_to_cxg_category_colors(self.data)
 
     def get_X_array(self, obs_mask=None, var_mask=None):
+        # H5Py does not support boolean indexing (masks), so convert to integer indexing
+        # when backed (ie, when AnnData is using H5Py indexing)
         if obs_mask is None:
             obs_mask = slice(None)
+        elif self.data.isbacked and obs_mask.dtype == bool:
+            obs_mask = obs_mask.nonzero()[0]
         if var_mask is None:
             var_mask = slice(None)
+        elif self.data.isbacked and var_mask.dtype == bool:
+            var_mask = var_mask.nonzero()[0]
         X = self.data.X[obs_mask, var_mask]
         return X
+
+    def get_X_approximate_distribution(self) -> XApproximateDistribution:
+        """return the approximate distribution of the X matrix."""
+        if self.X_approximate_distribution is None:
+            """Not yet evaluated."""
+            assert self.dataset_config.X_approximate_distribution == "auto"
+            self.data = self.data.to_memory()  # loads data
+            self.X_approximate_distribution = estimate_distribution.estimate_approximate_distribution(self.data.X)
+
+        return self.X_approximate_distribution
 
     def get_shape(self):
         return self.data.shape

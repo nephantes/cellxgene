@@ -1,4 +1,3 @@
-// jshint esversion: 6
 import React from "react";
 import { connect } from "react-redux";
 import * as d3 from "d3";
@@ -10,7 +9,6 @@ import {
 } from "../../util/stateManager/colorHelpers";
 
 // create continuous color legend
-// http://bl.ocks.org/syntagmatic/e8ccca52559796be775553b467593a9f
 const continuous = (selectorId, colorScale, colorAccessor) => {
   const legendHeight = 200;
   const legendWidth = 80;
@@ -100,6 +98,8 @@ const continuous = (selectorId, colorScale, colorAccessor) => {
     .attr("y", 2)
     .attr("x", 0 - legendHeight / 2)
     .attr("dy", "1em")
+    .attr("data-testid", "continuous_legend_color_by_label")
+    .attr("aria-label", colorAccessor)
     .style("text-anchor", "middle")
     .style("fill", "white")
     .text(colorAccessor);
@@ -108,16 +108,24 @@ const continuous = (selectorId, colorScale, colorAccessor) => {
 @connect((state) => ({
   annoMatrix: state.annoMatrix,
   colors: state.colors,
+  genesets: state.genesets.genesets,
 }))
 class ContinuousLegend extends React.Component {
   async componentDidUpdate(prevProps) {
-    const { annoMatrix, colors } = this.props;
+    const { annoMatrix, colors, genesets } = this.props;
     if (!colors || !annoMatrix) return;
 
     if (colors !== prevProps?.colors || annoMatrix !== prevProps?.annoMatrix) {
       const { schema } = annoMatrix;
       const { colorMode, colorAccessor, userColors } = colors;
-      const colorQuery = createColorQuery(colorMode, colorAccessor, schema);
+
+      const colorQuery = createColorQuery(
+        colorMode,
+        colorAccessor,
+        schema,
+        genesets
+      );
+
       const colorDf = colorQuery ? await annoMatrix.fetch(...colorQuery) : null;
       const colorTable = createColorTable(
         colorMode,

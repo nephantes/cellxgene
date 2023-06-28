@@ -16,10 +16,11 @@ import {
   createColorQuery,
 } from "../../util/stateManager/colorHelpers";
 import renderThrottle from "../../util/renderThrottle";
-
-const flagSelected = 1;
-const flagNaN = 2;
-const flagHighlight = 4;
+import {
+  flagBackground,
+  flagSelected,
+  flagHighlight,
+} from "../../util/glHelpers";
 
 function createProjectionTF(viewportWidth, viewportHeight) {
   /*
@@ -50,8 +51,8 @@ const getYScale = memoize(getScale);
     scatterplotXXaccessor,
     scatterplotYYaccessor,
 
-    differential: state.differential,
     crossfilter,
+    genesets: state.genesets.genesets,
   };
 })
 class Scatterplot extends React.PureComponent {
@@ -135,8 +136,9 @@ class Scatterplot extends React.PureComponent {
     const flags = new Float32Array(nObs);
     if (colorByData) {
       for (let i = 0, len = flags.length; i < len; i += 1) {
-        if (!Number.isFinite(colorByData[i])) {
-          flags[i] = flagNaN;
+        const val = colorByData[i];
+        if (typeof val === "number" && !Number.isFinite(val)) {
+          flags[i] = flagBackground;
         }
       }
     }
@@ -215,12 +217,10 @@ class Scatterplot extends React.PureComponent {
     }
   };
 
-  getViewportDimensions = () => {
-    return {
+  getViewportDimensions = () => ({
       height: window.innerHeight,
       width: window.innerWidth,
-    };
-  };
+    });
 
   handleResize = () => {
     const { state } = this.state;
@@ -240,17 +240,13 @@ class Scatterplot extends React.PureComponent {
       pointDilation,
     } = props.watchProps;
 
-    const [
-      expressionXDf,
-      expressionYDf,
-      colorDf,
-      pointDilationDf,
-    ] = await this.fetchData(
-      scatterplotXXaccessor,
-      scatterplotYYaccessor,
-      colorsProp,
-      pointDilation
-    );
+    const [expressionXDf, expressionYDf, colorDf, pointDilationDf] =
+      await this.fetchData(
+        scatterplotXXaccessor,
+        scatterplotYYaccessor,
+        colorsProp,
+        pointDilation
+      );
     const colorTable = this.updateColorTable(colorsProp, colorDf);
 
     const xCol = expressionXDf.icol(0);
@@ -301,18 +297,20 @@ class Scatterplot extends React.PureComponent {
     return [
       "X",
       {
-        field: "var",
-        column: varIndex,
-        value: geneName,
+        where: {
+          field: "var",
+          column: varIndex,
+          value: geneName,
+        },
       },
     ];
   }
 
   createColorByQuery(colors) {
-    const { annoMatrix } = this.props;
+    const { annoMatrix, genesets } = this.props;
     const { schema } = annoMatrix;
     const { colorMode, colorAccessor } = colors;
-    return createColorQuery(colorMode, colorAccessor, schema);
+    return createColorQuery(colorMode, colorAccessor, schema, genesets);
   }
 
   updateColorTable(colors, colorDf) {

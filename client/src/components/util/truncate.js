@@ -1,5 +1,5 @@
 import React, { cloneElement } from "react";
-import { Tooltip, Position } from "@blueprintjs/core";
+import { Tooltip2 } from "@blueprintjs/popover2";
 
 import { tooltipHoverOpenDelayQuick } from "../../globals";
 
@@ -33,7 +33,7 @@ const SECOND_HALF_INNER_STYLE = {
 };
 
 export default (props) => {
-  const { children } = props;
+  const { children, isGenesetDescription, tooltipAddendum = "" } = props;
   // Truncate only support a single child with a text child
 
   if (
@@ -85,19 +85,26 @@ export default (props) => {
       "aria-label": originalString,
     })
   );
+  // we need an ID to check for this content, since this is the only place the geneset description appears
+  const descriptionContent = (
+    <span
+      test-id={`geneset-description-tooltip-${originalString}${tooltipAddendum}`}
+    >
+      {originalString}
+      {tooltipAddendum}
+    </span>
+  );
   return (
-    <Tooltip
-      content={originalString}
+    <Tooltip2
+      content={
+        isGenesetDescription
+          ? descriptionContent
+          : `${originalString}${tooltipAddendum}`
+      }
       hoverOpenDelay={tooltipHoverOpenDelayQuick}
-      position={Position.LEFT}
-      usePortal
-      modifiers={{
-        preventOverflow: { enabled: false },
-        hide: { enabled: false },
-      }}
       targetProps={{ style: children.props.style }}
     >
       {newChildren}
-    </Tooltip>
+    </Tooltip2>
   );
 };

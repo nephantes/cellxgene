@@ -1,5 +1,3 @@
-// jshint esversion: 6
-
 // const PositiveIntervals = require("../../src/util/typedCrossfilter/positiveIntervals");
 import PositiveIntervals from "../../../src/util/typedCrossfilter/positiveIntervals";
 
@@ -153,9 +151,9 @@ describe("intersection", () => {
       [1, 2],
       [6, 9],
     ]);
-    expect(
-      PositiveIntervals.intersection([[0, 2638]], [[1363, 2638]])
-    ).toEqual([[1363, 2638]]);
+    expect(PositiveIntervals.intersection([[0, 2638]], [[1363, 2638]])).toEqual(
+      [[1363, 2638]]
+    );
     expect(PositiveIntervals.intersection([[1, 2]], [[1, 2]])).toEqual([
       [1, 2],
     ]);

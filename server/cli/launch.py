@@ -21,41 +21,45 @@ def annotation_args(func):
     @click.option(
         "--disable-annotations",
         is_flag=True,
-        default=not DEFAULT_CONFIG.default_dataset_config.user_annotations__enable,
+        default=not DEFAULT_CONFIG.dataset_config.user_annotations__enable,
         show_default=True,
         help="Disable user annotation of data.",
     )
     @click.option(
         "--annotations-file",
-        default=DEFAULT_CONFIG.default_dataset_config.user_annotations__local_file_csv__file,
+        default=DEFAULT_CONFIG.dataset_config.user_annotations__local_file_csv__file,
         show_default=True,
         multiple=False,
         metavar="<path>",
         help="CSV file to initialize editing of existing annotations; will be altered in-place. "
-        "Incompatible with --annotations-dir.",
+        "Incompatible with --user-generated-data-dir.",
     )
     @click.option(
+        "--user-generated-data-dir",
         "--annotations-dir",
-        default=DEFAULT_CONFIG.default_dataset_config.user_annotations__local_file_csv__directory,
+        default=DEFAULT_CONFIG.dataset_config.user_annotations__local_file_csv__directory,
         show_default=False,
         multiple=False,
         metavar="<directory path>",
         help="Directory of where to save output annotations; filename will be specified in the application. "
-        "Incompatible with --annotations-file.",
+        "Incompatible with --annotations-file and --gene-sets-file.",
     )
     @click.option(
-        "--experimental-annotations-ontology",
+        "--disable-gene-sets-save",
         is_flag=True,
-        default=DEFAULT_CONFIG.default_dataset_config.user_annotations__ontology__enable,
-        show_default=True,
-        help="When creating annotations, optionally autocomplete names from ontology terms.",
+        default=DEFAULT_CONFIG.dataset_config.user_annotations__gene_sets__readonly,
+        show_default=False,
+        help="Disable saving gene sets. If disabled, users will be able to make changes to gene sets but all "
+        "changes will be lost on browser refresh.",
     )
     @click.option(
-        "--experimental-annotations-ontology-obo",
-        default=DEFAULT_CONFIG.default_dataset_config.user_annotations__ontology__obo_location,
+        "--gene-sets-file",
+        default=DEFAULT_CONFIG.dataset_config.user_annotations__local_file_csv__gene_sets_file,
         show_default=True,
-        metavar="<path or url>",
-        help="Location of OBO file defining cell annotation autosuggest terms.",
+        multiple=False,
+        metavar="<path>",
+        help="CSV file to initialize editing of gene sets; will be altered in-place. Incompatible with "
+        "--user-generated-data-dir.",
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -67,7 +71,7 @@ def annotation_args(func):
 def config_args(func):
     @click.option(
         "--max-category-items",
-        default=DEFAULT_CONFIG.default_dataset_config.presentation__max_categories,
+        default=DEFAULT_CONFIG.dataset_config.presentation__max_categories,
         metavar="<integer>",
         show_default=True,
         help="Will not display categories with more distinct values than specified.",
@@ -82,7 +86,7 @@ def config_args(func):
     @click.option(
         "--diffexp-lfc-cutoff",
         "-de",
-        default=DEFAULT_CONFIG.default_dataset_config.diffexp__lfc_cutoff,
+        default=DEFAULT_CONFIG.dataset_config.diffexp__lfc_cutoff,
         show_default=True,
         metavar="<float>",
         help="Minimum log fold change threshold for differential expression.",
@@ -90,26 +94,18 @@ def config_args(func):
     @click.option(
         "--disable-diffexp",
         is_flag=True,
-        default=not DEFAULT_CONFIG.default_dataset_config.diffexp__enable,
+        default=not DEFAULT_CONFIG.dataset_config.diffexp__enable,
         show_default=False,
         help="Disable on-demand differential expression.",
     )
     @click.option(
         "--embedding",
         "-e",
-        default=DEFAULT_CONFIG.default_dataset_config.embeddings__names,
+        default=DEFAULT_CONFIG.dataset_config.embeddings__names,
         multiple=True,
         show_default=False,
         metavar="<text>",
         help="Embedding name, eg, 'umap'. Repeat option for multiple embeddings. Defaults to all.",
-    )
-    @click.option(
-        "--experimental-enable-reembedding",
-        is_flag=True,
-        default=DEFAULT_CONFIG.default_dataset_config.embeddings__enable_reembedding,
-        show_default=False,
-        hidden=True,
-        help="Enable experimental on-demand re-embedding using UMAP. WARNING: may be very slow.",
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -153,6 +149,14 @@ def dataset_args(func):
         default=DEFAULT_CONFIG.server_config.single_dataset__about,
         metavar="<URL>",
         help="URL providing more information about the dataset (hint: must be a fully specified absolute URL).",
+    )
+    @click.option(
+        "--X-approximate-distribution",
+        default=DEFAULT_CONFIG.dataset_config.X_approximate_distribution,
+        show_default=True,
+        type=click.Choice(["auto", "normal", "count"], case_sensitive=False),
+        help="Specify the approximate distribution of X matrix values. 'auto' will use a heuristic "
+        "to determine the approximate distribution.  Mode 'auto' is incompatible with --backed.",
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -198,7 +202,7 @@ def server_args(func):
     @click.option(
         "--scripts",
         "-s",
-        default=DEFAULT_CONFIG.default_dataset_config.app__scripts,
+        default=DEFAULT_CONFIG.dataset_config.app__scripts,
         multiple=True,
         metavar="<text>",
         help="Additional script files to include in HTML page. If not specified, "
@@ -217,14 +221,6 @@ def launch_args(func):
     @config_args
     @dataset_args
     @server_args
-    @click.option(
-        "--dataroot",
-        default=DEFAULT_CONFIG.server_config.multi_dataset__dataroot,
-        metavar="<data directory>",
-        help="Enable cellxgene to serve multiple files. Supply path (local directory or URL)"
-        " to folder containing H5AD and/or CXG datasets.",
-        hidden=True,
-    )  # TODO, unhide when dataroot is supported)
     @click.argument("datapath", required=False, metavar="<path to data file>")
     @click.option(
         "--open",
@@ -307,7 +303,6 @@ class CliLaunchServer(Server):
 @launch_args
 def launch(
     datapath,
-    dataroot,
     verbose,
     debug,
     open_browser,
@@ -324,20 +319,20 @@ def launch(
     about,
     disable_annotations,
     annotations_file,
-    annotations_dir,
+    user_generated_data_dir,
+    gene_sets_file,
+    disable_gene_sets_save,
     backed,
     disable_diffexp,
-    experimental_annotations_ontology,
-    experimental_annotations_ontology_obo,
-    experimental_enable_reembedding,
     config_file,
     dump_default_config,
+    x_approximate_distribution,
 ):
     """Launch the cellxgene data viewer.
     This web app lets you explore single-cell expression data.
     Data must be in a format that cellxgene expects.
     Read the "getting started" guide to learn more:
-    https://chanzuckerberg.github.io/cellxgene/getting-started.html
+    https://github.com/chanzuckerberg/cellxgene-documentation/blob/main/README.md
 
     Examples:
 
@@ -346,11 +341,6 @@ def launch(
     > cellxgene launch <your data file> --title <your title>
 
     > cellxgene launch <url>"""
-
-    # TODO Examples to provide when "--dataroot" is unhidden
-    # > cellxgene launch --dataroot example-dataset/
-    #
-    # > cellxgene launch --dataroot <url>
 
     if dump_default_config:
         print(default_config)
@@ -381,31 +371,30 @@ def launch(
             single_dataset__about=about,
             single_dataset__obs_names=obs_names,
             single_dataset__var_names=var_names,
-            multi_dataset__dataroot=dataroot,
             adaptor__anndata_adaptor__backed=backed,
         )
-        cli_config.update_default_dataset_config(
+        cli_config.update_dataset_config(
             app__scripts=scripts,
             user_annotations__enable=not disable_annotations,
             user_annotations__local_file_csv__file=annotations_file,
-            user_annotations__local_file_csv__directory=annotations_dir,
-            user_annotations__ontology__enable=experimental_annotations_ontology,
-            user_annotations__ontology__obo_location=experimental_annotations_ontology_obo,
+            user_annotations__local_file_csv__directory=user_generated_data_dir,
+            user_annotations__local_file_csv__gene_sets_file=gene_sets_file,
+            user_annotations__gene_sets__readonly=disable_gene_sets_save,
             presentation__max_categories=max_category_items,
             presentation__custom_colors=not disable_custom_colors,
             embeddings__names=embedding,
-            embeddings__enable_reembedding=experimental_enable_reembedding,
             diffexp__enable=not disable_diffexp,
             diffexp__lfc_cutoff=diffexp_lfc_cutoff,
+            X_approximate_distribution=x_approximate_distribution,
         )
 
         diff = cli_config.server_config.changes_from_default()
         changes = {key: val for key, val, _ in diff}
         app_config.update_server_config(**changes)
 
-        diff = cli_config.default_dataset_config.changes_from_default()
+        diff = cli_config.dataset_config.changes_from_default()
         changes = {key: val for key, val, _ in diff}
-        app_config.update_default_dataset_config(**changes)
+        app_config.update_dataset_config(**changes)
 
         # process the configuration
         #  any errors will be thrown as an exception.

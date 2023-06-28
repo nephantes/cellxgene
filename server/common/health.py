@@ -2,7 +2,7 @@ from http import HTTPStatus
 from flask import make_response, jsonify
 
 from server import __version__ as cellxgene_version
-from server.common.data_locator import DataLocator
+from server.common.utils.data_locator import DataLocator
 
 
 def _is_accessible(path, config):
@@ -23,15 +23,10 @@ def health_check(config):
     """
     health = {"status": None, "version": "1", "releaseID": cellxgene_version}
 
-    checks = False
     server_config = config.server_config
-    if config.is_multi_dataset():
-        dataroots = [datapath_dict["dataroot"] for datapath_dict in server_config.multi_dataset__dataroot.values()]
-        checks = all([_is_accessible(dataroot, server_config) for dataroot in dataroots])
-    else:
-        checks = _is_accessible(server_config.single_dataset__datapath, server_config)
+    check = _is_accessible(server_config.single_dataset__datapath, server_config)
 
-    health["status"] = "pass" if checks else "fail"
+    health["status"] = "pass" if check else "fail"
     code = HTTPStatus.OK if health["status"] == "pass" else HTTPStatus.BAD_REQUEST
     response = make_response(jsonify(health), code)
     response.headers["Content-Type"] = "application/health+json"

@@ -1,4 +1,3 @@
-// jshint esversion: 6
 import React from "react";
 import { Button, Menu, MenuItem, Popover, Position } from "@blueprintjs/core";
 import { IconNames } from "@blueprintjs/icons";
@@ -10,7 +9,7 @@ const InformationMenu = React.memo((props) => {
       content={
         <Menu>
           <MenuItem
-            href="https://chanzuckerberg.github.io/cellxgene/"
+            href="https://docs.cellxgene.cziscience.com/"
             target="_blank"
             icon="book"
             text="Documentation"
@@ -30,8 +29,12 @@ const InformationMenu = React.memo((props) => {
             text="Github"
             rel="noopener"
           />
-          <MenuItem target="_blank" text={libraryVersions?.cellxgene || null} />
-          <MenuItem text="MIT License" />
+          <MenuItem
+            style={{ cursor: "default" }}
+            target="_blank"
+            text={libraryVersions?.cellxgene || null}
+          />
+          <MenuItem style={{ cursor: "default" }} text="MIT License" />
           {tosURL && (
             <MenuItem
               href={tosURL}

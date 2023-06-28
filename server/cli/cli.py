@@ -1,10 +1,9 @@
 import click
 
-from .convert_to_cxg import convert_to_cxg
+from .annotate import annotate
 from .launch import launch
 from .prepare import prepare
 from .upgrade import log_upgrade_check
-from .schema import schema_cli
 from .. import __version__
 
 
@@ -22,7 +21,10 @@ from .. import __version__
     help="Show the software version and exit.",
 )
 @click.option(
-    "--upgrade-check/--no-upgrade-check", default=True, show_default=True, help="Check for release upgrades on start.",
+    "--upgrade-check/--no-upgrade-check",
+    default=True,
+    show_default=True,
+    help="Check for release upgrades on start.",
 )
 def cli(upgrade_check):
     if upgrade_check:
@@ -30,6 +32,5 @@ def cli(upgrade_check):
 
 
 cli.add_command(launch)
+cli.add_command(annotate)
 cli.add_command(prepare)
-cli.add_command(convert_to_cxg)
-cli.add_command(schema_cli)

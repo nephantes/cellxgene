@@ -11,42 +11,27 @@ class BaseConfig(object):
     Currently DatasetConfig and ServerConfig both inherit from BaseConfig.
     """
 
-    def __init__(self, app_config, default_config, dictval_cases={}):
+    def __init__(self, app_config, default_config):
         # reference back to the app_config
         self.app_config = app_config
         # the complete set of attributes and their default values (unflattened)
         self.default_config = default_config
-        # attributes where the value may be a dict (and therefore are not flattened)
-        self.dictval_cases = dictval_cases
         # used to make sure every attribute value is checked
         self.attr_checked = {key_name: False for key_name in self.create_mapping(default_config).keys()}
 
     def create_mapping(self, config):
         """
         Create a dictionary where the keys are the name of attributes (using double underscore convention)
-        For example: authentication__type
+        For example: app__host
 
         The values are a tuple,
         - the first item of the tuple is a tuple of path elements (location in config 'tree')
         - the second item is the value of the config parameter
 
-        For example: (('authentication', 'type'), 'session'))
+        For example: (("app", "host"), "session"))
         """
         config_copy = copy.deepcopy(config)
         mapping = {}
-
-        # special cases where the value could be a dict.
-        # If its value is not None, the entry is added to the mapping, and not included
-        # in the flattening below.
-        for dictval_case in self.dictval_cases:
-            cur = config_copy
-            for part in dictval_case[:-1]:
-                cur = cur.get(part, {})
-            val = cur.get(dictval_case[-1])
-            if val is not None:
-                key = "__".join(dictval_case)
-                mapping[key] = (dictval_case, val)
-                del cur[dictval_case[-1]]
 
         flat_config = flatten(config_copy)
         for key, value in flat_config.items():
@@ -83,24 +68,6 @@ class BaseConfig(object):
         """Update the attributes defined in kw with their new values."""
         for key, value in kw.items():
             if not hasattr(self, key):
-
-                # check if the key is setting into a dictval entry.
-                found_dictval = False
-                for dictval in self.dictval_cases:
-                    dictvalname = "__".join(dictval)
-                    if dictvalname + "__" in key:
-                        dictkey = key[len(dictvalname) + 2 :]
-                        curdictval = getattr(self, dictvalname)
-                        if curdictval is None:
-                            setattr(self, dictvalname, dict(dictkey=value))
-                        else:
-                            curdictval[dictkey] = value
-
-                        found_dictval = True
-                        break
-
-                if found_dictval:
-                    continue
                 raise ConfigurationError(f"unknown config parameter {key}.")
             try:
                 if type(value) == tuple:
